@@ -17,6 +17,7 @@ impl ChatWidget {
             app_event_tx,
             workspace_command_runner,
             initial_user_message,
+            initial_queued_user_messages,
             enhanced_keys_supported,
             has_chatgpt_account,
             model_catalog,
@@ -59,6 +60,26 @@ impl ChatWidget {
         let current_collaboration_mode = CollaborationMode {
             mode: ModeKind::Default,
             settings: fallback_default,
+        };
+
+        let queued_user_messages = initial_queued_user_messages
+            .into_iter()
+            .map(|user_message| {
+                QueuedUserMessage::new_with_collaboration_mask(
+                    user_message,
+                    QueuedInputAction::Plain,
+                    active_collaboration_mask.clone(),
+                )
+            })
+            .collect::<std::collections::VecDeque<_>>();
+        let queued_user_message_count = queued_user_messages.len();
+        let input_queue = InputQueueState {
+            queued_user_messages,
+            queued_user_message_history_records: std::collections::VecDeque::from(vec![
+                UserMessageHistoryRecord::UserMessageText;
+                queued_user_message_count
+            ]),
+            ..InputQueueState::default()
         };
 
         let active_cell = Some(Self::placeholder_session_header_cell(&config));
@@ -180,7 +201,7 @@ impl ChatWidget {
             side_placeholder_text: side_placeholder,
             forked_from: None,
             interrupted_turn_notice_mode: InterruptedTurnNoticeMode::Default,
-            input_queue: InputQueueState::default(),
+            input_queue,
             chat_keymap,
             queued_message_edit_hint_binding,
             show_welcome_banner: is_first_run,

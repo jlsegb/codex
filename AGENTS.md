@@ -106,6 +106,25 @@ See `codex-rs/tui/styles.md`.
 - If you need to indent wrapped lines, use the initial_indent / subsequent_indent options from RtOptions if you can, rather than writing custom logic.
 - If you have a list of lines and you need to prefix them all with some prefix (optionally different on the first vs subsequent lines), use the `prefix_lines` helper from line_utils.
 
+### Local TUI delimiter and queue behavior
+
+- This local fork intentionally supports splitting user input on the literal delimiter `<submit_or_queue>`.
+- Keep all three entry paths in sync, but preserve their distinct timing:
+  - CLI startup prompt arguments are converted in `codex-rs/tui/src/app.rs` into `ChatWidgetInit` before the first session is configured. The first non-empty segment becomes the initial user message and starts automatically; later non-empty segments seed `ChatWidget`'s queued user message FIFO.
+  - Typed composer submissions flow through `codex-rs/tui/src/bottom_pane/chat_composer.rs` and are split only when the user submits. The first non-empty segment submits immediately when idle; later non-empty segments are queued in order behind any existing queued messages.
+  - Pasted text must only populate the composer. Paste must not submit, queue, or start work until the user explicitly submits.
+- Empty delimiter segments are ignored. A delimiter-only submission such as `<submit_or_queue>` is a no-op and must never send an empty prompt or the delimiter text to the model.
+- Only split plain text `UserMessage`s. Do not split messages that include images, remote images, `text_elements`, or `mention_bindings` unless focused tests explicitly cover that behavior.
+- Preserve the normal non-delimiter submission path through `submit_user_message(...)`; delimiter handling should not bypass pending steer, review, shell command, or other existing submission behavior for ordinary prompts.
+- Queued user messages must snapshot `active_collaboration_mask` when they are enqueued and dispatch with that stored mask. Toggling Plan/Default mode later must not change already queued work.
+- Focused tests for this behavior live in `codex-rs/tui/src/chatwidget/tests/composer_submission.rs` and `codex-rs/tui/src/chatwidget/tests/plan_mode.rs`. Add or update coverage there when changing delimiter fan-out, paste behavior, startup prompts, or queued collaboration mode.
+
+### Local TUI blue background marker
+
+- This local fork intentionally remaps TUI background colors in `codex-rs/tui/src/custom_terminal.rs` so the locally built binary is visually distinct from upstream Codex.
+- Keep the marker limited to background colors: light themes should use very light blue shades instead of white, and dark themes should use dark blue shades instead of black.
+- Do not change black/white foreground text colors for this marker.
+
 ## Tests
 
 ### Snapshot tests

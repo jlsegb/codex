@@ -103,9 +103,13 @@ impl ChatWidget {
     ) -> (bool, Option<AppCommand>) {
         if !self.is_session_configured() {
             tracing::warn!("cannot submit user message before session is configured; queueing");
-            self.input_queue
-                .queued_user_messages
-                .push_front(QueuedUserMessage::from(user_message));
+            self.input_queue.queued_user_messages.push_front(
+                QueuedUserMessage::new_with_collaboration_mask(
+                    user_message,
+                    QueuedInputAction::Plain,
+                    self.active_collaboration_mask.clone(),
+                ),
+            );
             self.input_queue
                 .queued_user_message_history_records
                 .push_front(history_record);

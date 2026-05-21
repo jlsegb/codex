@@ -24,6 +24,9 @@ impl ChatWidget {
                 {
                     return;
                 }
+                if is_empty_submit_or_queue_submission(&user_message) {
+                    return;
+                }
                 let should_submit_now =
                     self.is_session_configured() && !self.is_plan_streaming_in_tui();
                 if should_submit_now {
@@ -38,6 +41,10 @@ impl ChatWidget {
                     self.reasoning_buffer.clear();
                     self.full_reasoning_buffer.clear();
                     self.set_status_header(String::from("Working"));
+                    if is_plain_submit_or_queue_candidate(&user_message) {
+                        self.queue_user_message(user_message);
+                        return;
+                    }
                     self.submit_user_message(user_message);
                 } else {
                     self.queue_user_message(user_message);
@@ -82,10 +89,24 @@ impl ChatWidget {
         user_message: UserMessage,
         action: QueuedInputAction,
     ) {
+        for user_message in split_submit_or_queue_user_message(user_message) {
+            self.queue_single_user_message_with_options(user_message, action);
+        }
+    }
+
+    fn queue_single_user_message_with_options(
+        &mut self,
+        user_message: UserMessage,
+        action: QueuedInputAction,
+    ) {
         if !self.is_session_configured() || self.is_user_turn_pending_or_running() {
-            self.input_queue
-                .queued_user_messages
-                .push_back(QueuedUserMessage::new(user_message, action));
+            self.input_queue.queued_user_messages.push_back(
+                QueuedUserMessage::new_with_collaboration_mask(
+                    user_message,
+                    action,
+                    self.active_collaboration_mask.clone(),
+                ),
+            );
             self.input_queue
                 .queued_user_message_history_records
                 .push_back(UserMessageHistoryRecord::UserMessageText);
@@ -110,21 +131,33 @@ impl ChatWidget {
             };
             match queued_message.action {
                 QueuedInputAction::Plain => {
-                    submitted_follow_up = self.submit_user_message_with_history_record(
+                    let collaboration_mask = queued_message.collaboration_mask.clone();
+                    submitted_follow_up = self.submit_user_message_with_queued_collaboration_mask(
                         queued_message.into_user_message(),
                         history_record,
+                        collaboration_mask,
                     );
                     break;
                 }
                 QueuedInputAction::ParseSlash => {
-                    let drain = self.submit_queued_slash_prompt(queued_message.into_user_message());
+                    let collaboration_mask = queued_message.collaboration_mask.clone();
+                    let drain =
+                        self.with_queued_collaboration_mask(collaboration_mask, |chat_widget| {
+                            chat_widget
+                                .submit_queued_slash_prompt(queued_message.into_user_message())
+                        });
                     if drain == QueueDrain::Stop {
                         submitted_follow_up = self.is_user_turn_pending_or_running();
                         break;
                     }
                 }
                 QueuedInputAction::RunShell => {
-                    let drain = self.submit_queued_shell_prompt(queued_message.into_user_message());
+                    let collaboration_mask = queued_message.collaboration_mask.clone();
+                    let drain =
+                        self.with_queued_collaboration_mask(collaboration_mask, |chat_widget| {
+                            chat_widget
+                                .submit_queued_shell_prompt(queued_message.into_user_message())
+                        });
                     if drain == QueueDrain::Stop {
                         submitted_follow_up = self.is_user_turn_pending_or_running();
                         break;
@@ -135,6 +168,33 @@ impl ChatWidget {
         // Update the list to reflect the remaining queued messages (if any).
         self.refresh_pending_input_preview();
         submitted_follow_up
+    }
+
+    fn submit_user_message_with_queued_collaboration_mask(
+        &mut self,
+        user_message: UserMessage,
+        history_record: UserMessageHistoryRecord,
+        collaboration_mask: Option<CollaborationModeMask>,
+    ) -> bool {
+        self.with_queued_collaboration_mask(collaboration_mask, |chat_widget| {
+            chat_widget.submit_user_message_with_history_record(user_message, history_record)
+        })
+    }
+
+    fn with_queued_collaboration_mask<T>(
+        &mut self,
+        collaboration_mask: Option<CollaborationModeMask>,
+        f: impl FnOnce(&mut Self) -> T,
+    ) -> T {
+        let Some(collaboration_mask) = collaboration_mask else {
+            return f(self);
+        };
+
+        let previous_collaboration_mask = self.active_collaboration_mask.clone();
+        self.active_collaboration_mask = Some(collaboration_mask);
+        let result = f(self);
+        self.active_collaboration_mask = previous_collaboration_mask;
+        result
     }
 
     pub(super) fn is_user_turn_pending_or_running(&self) -> bool {

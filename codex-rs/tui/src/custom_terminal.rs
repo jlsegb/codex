@@ -46,6 +46,9 @@ use ratatui::style::Modifier;
 use ratatui::widgets::WidgetRef;
 use unicode_width::UnicodeWidthStr;
 
+use crate::color::is_light;
+use crate::terminal_palette::default_bg;
+
 /// Returns the display width of a cell symbol, ignoring OSC escape sequences.
 ///
 /// OSC sequences (e.g. OSC 8 hyperlinks: `\x1B]8;;URL\x07`) are terminal
@@ -667,9 +670,10 @@ where
                     modifier = cell.modifier;
                 }
                 if cell.fg != fg || cell.bg != bg {
+                    let local_bg = local_codex_background(cell.bg);
                     queue!(
                         writer,
-                        SetColors(Colors::new(cell.fg.into(), cell.bg.into()))
+                        SetColors(Colors::new(cell.fg.into(), local_bg.into()))
                     )?;
                     fg = cell.fg;
                     bg = cell.bg;
@@ -680,7 +684,10 @@ where
             DrawCommand::ClearToEnd { bg: clear_bg, .. } => {
                 queue!(writer, SetAttribute(crossterm::style::Attribute::Reset))?;
                 modifier = Modifier::empty();
-                queue!(writer, SetBackgroundColor(clear_bg.into()))?;
+                queue!(
+                    writer,
+                    SetBackgroundColor(local_codex_background(clear_bg).into())
+                )?;
                 bg = clear_bg;
                 queue!(writer, Clear(crossterm::terminal::ClearType::UntilNewLine))?;
             }
@@ -695,6 +702,30 @@ where
     )?;
 
     Ok(())
+}
+
+#[allow(clippy::disallowed_methods)]
+fn local_codex_background(color: Color) -> Color {
+    match color {
+        Color::Reset => local_codex_default_background(),
+        Color::Black => Color::Rgb(4, 16, 34),
+        Color::DarkGray => Color::Rgb(18, 46, 82),
+        Color::Gray => Color::Rgb(185, 210, 236),
+        Color::White => Color::Rgb(238, 247, 255),
+        Color::Indexed(0) => Color::Rgb(4, 16, 34),
+        Color::Indexed(7) => Color::Rgb(185, 210, 236),
+        Color::Indexed(8) => Color::Rgb(18, 46, 82),
+        Color::Indexed(15) => Color::Rgb(238, 247, 255),
+        _ => color,
+    }
+}
+
+#[allow(clippy::disallowed_methods)]
+fn local_codex_default_background() -> Color {
+    match default_bg() {
+        Some(bg) if is_light(bg) => Color::Rgb(238, 247, 255),
+        Some(_) | None => Color::Rgb(4, 16, 34),
+    }
 }
 
 /// The `ModifierDiff` struct is used to calculate the difference between two `Modifier`

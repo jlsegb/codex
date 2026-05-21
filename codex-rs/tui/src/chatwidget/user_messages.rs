@@ -59,13 +59,23 @@ pub(super) enum ShellEscapePolicy {
 pub(super) struct QueuedUserMessage {
     pub(super) user_message: UserMessage,
     pub(super) action: QueuedInputAction,
+    pub(super) collaboration_mask: Option<CollaborationModeMask>,
 }
 
 impl QueuedUserMessage {
     pub(super) fn new(user_message: UserMessage, action: QueuedInputAction) -> Self {
+        Self::new_with_collaboration_mask(user_message, action, None)
+    }
+
+    pub(super) fn new_with_collaboration_mask(
+        user_message: UserMessage,
+        action: QueuedInputAction,
+        collaboration_mask: Option<CollaborationModeMask>,
+    ) -> Self {
         Self {
             user_message,
             action,
+            collaboration_mask,
         }
     }
 
@@ -170,7 +180,45 @@ pub(crate) fn create_initial_user_message(
     local_image_paths: Vec<PathBuf>,
     text_elements: Vec<TextElement>,
 ) -> Option<UserMessage> {
+    create_user_message(text.unwrap_or_default(), local_image_paths, text_elements)
+}
+
+const SUBMIT_OR_QUEUE_DELIMITER: &str = "<submit_or_queue>";
+
+pub(crate) fn create_initial_user_messages(
+    text: Option<String>,
+    local_image_paths: Vec<PathBuf>,
+    text_elements: Vec<TextElement>,
+) -> (Option<UserMessage>, Vec<UserMessage>) {
     let text = text.unwrap_or_default();
+    if !text.contains(SUBMIT_OR_QUEUE_DELIMITER) {
+        return (
+            create_user_message(text, local_image_paths, text_elements),
+            Vec::new(),
+        );
+    }
+
+    let mut segments = split_submit_or_queue_segments(&text);
+    let initial_text = segments.next().unwrap_or_default();
+    let initial_user_message = create_user_message(initial_text, local_image_paths, text_elements);
+    let queued_user_messages = segments
+        .map(|segment| UserMessage {
+            text: segment,
+            local_images: Vec::new(),
+            remote_image_urls: Vec::new(),
+            text_elements: Vec::new(),
+            mention_bindings: Vec::new(),
+        })
+        .collect();
+
+    (initial_user_message, queued_user_messages)
+}
+
+fn create_user_message(
+    text: String,
+    local_image_paths: Vec<PathBuf>,
+    text_elements: Vec<TextElement>,
+) -> Option<UserMessage> {
     if text.is_empty() && local_image_paths.is_empty() {
         None
     } else {
@@ -190,6 +238,37 @@ pub(crate) fn create_initial_user_message(
             mention_bindings: Vec::new(),
         })
     }
+}
+
+fn split_submit_or_queue_segments(text: &str) -> impl Iterator<Item = String> + '_ {
+    text.split(SUBMIT_OR_QUEUE_DELIMITER)
+        .map(str::trim)
+        .filter(|segment| !segment.is_empty())
+        .map(ToString::to_string)
+}
+
+pub(super) fn split_submit_or_queue_user_message(user_message: UserMessage) -> Vec<UserMessage> {
+    if is_plain_submit_or_queue_candidate(&user_message) {
+        return split_submit_or_queue_segments(&user_message.text)
+            .map(UserMessage::from)
+            .collect();
+    }
+    vec![user_message]
+}
+
+pub(super) fn is_plain_submit_or_queue_candidate(user_message: &UserMessage) -> bool {
+    user_message.local_images.is_empty()
+        && user_message.remote_image_urls.is_empty()
+        && user_message.text_elements.is_empty()
+        && user_message.mention_bindings.is_empty()
+        && user_message.text.contains(SUBMIT_OR_QUEUE_DELIMITER)
+}
+
+pub(super) fn is_empty_submit_or_queue_submission(user_message: &UserMessage) -> bool {
+    is_plain_submit_or_queue_candidate(user_message)
+        && split_submit_or_queue_segments(&user_message.text)
+            .next()
+            .is_none()
 }
 
 fn append_text_with_rebased_elements(

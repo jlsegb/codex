@@ -1311,6 +1311,48 @@ async fn collab_mode_shift_tab_cycles_only_when_idle() {
 }
 
 #[tokio::test]
+async fn queued_user_message_uses_collaboration_mode_from_enqueue_time() {
+    let (mut chat, _rx, mut op_rx) = make_chatwidget_manual(Some("gpt-5")).await;
+    chat.thread_id = Some(ThreadId::new());
+    chat.set_feature_enabled(Feature::CollaborationModes, /*enabled*/ true);
+    let default_mask =
+        collaboration_modes::mask_for_kind(chat.model_catalog.as_ref(), ModeKind::Default)
+            .expect("expected default collaboration mask");
+    chat.set_collaboration_mask(default_mask);
+    chat.bottom_pane.set_task_running(/*running*/ true);
+
+    chat.queue_user_message(UserMessage {
+        text: "Keep using the mode I queued with.".to_string(),
+        local_images: Vec::new(),
+        remote_image_urls: Vec::new(),
+        text_elements: Vec::new(),
+        mention_bindings: Vec::new(),
+    });
+
+    let plan_mask = collaboration_modes::mask_for_kind(chat.model_catalog.as_ref(), ModeKind::Plan)
+        .expect("expected plan collaboration mask");
+    chat.set_collaboration_mask(plan_mask);
+    chat.bottom_pane.set_task_running(/*running*/ false);
+
+    assert!(chat.maybe_send_next_queued_input());
+
+    match next_submit_op(&mut op_rx) {
+        Op::UserTurn {
+            collaboration_mode:
+                Some(CollaborationMode {
+                    mode: ModeKind::Default,
+                    ..
+                }),
+            ..
+        } => {}
+        other => {
+            panic!("expected queued Op::UserTurn with default collab mode, got {other:?}")
+        }
+    }
+    assert_eq!(chat.active_collaboration_mode_kind(), ModeKind::Plan);
+}
+
+#[tokio::test]
 async fn mode_switch_surfaces_model_change_notification_when_effective_model_changes() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(Some("gpt-5")).await;
     chat.set_feature_enabled(Feature::CollaborationModes, /*enabled*/ true);
@@ -1489,6 +1531,7 @@ async fn make_startup_chat_with_cli_overrides(
         app_event_tx: AppEventSender::new(unbounded_channel::<AppEvent>().0),
         workspace_command_runner: None,
         initial_user_message: None,
+        initial_queued_user_messages: Vec::new(),
         enhanced_keys_supported: false,
         has_chatgpt_account: false,
         model_catalog: test_model_catalog(&cfg),

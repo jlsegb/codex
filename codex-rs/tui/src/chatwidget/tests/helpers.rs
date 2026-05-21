@@ -165,6 +165,7 @@ pub(super) async fn make_chatwidget_manual(
         app_event_tx,
         workspace_command_runner: None,
         initial_user_message: None,
+        initial_queued_user_messages: Vec::new(),
         enhanced_keys_supported: false,
         has_chatgpt_account: false,
         model_catalog,

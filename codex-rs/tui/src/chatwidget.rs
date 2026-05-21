@@ -426,10 +426,14 @@ use self::user_messages::UserMessageHistoryOverride;
 use self::user_messages::UserMessageHistoryRecord;
 use self::user_messages::app_server_text_elements;
 pub(crate) use self::user_messages::create_initial_user_message;
+pub(crate) use self::user_messages::create_initial_user_messages;
+use self::user_messages::is_empty_submit_or_queue_submission;
+use self::user_messages::is_plain_submit_or_queue_candidate;
 use self::user_messages::merge_user_messages;
 use self::user_messages::merge_user_messages_with_history_record;
 #[cfg(test)]
 use self::user_messages::remap_placeholders_for_message;
+use self::user_messages::split_submit_or_queue_user_message;
 use self::user_messages::user_message_display_for_history;
 use self::user_messages::user_message_for_restore;
 use self::user_messages::user_message_preview_text;
@@ -476,6 +480,7 @@ pub(crate) struct ChatWidgetInit {
     /// construction provides a runner for the active app-server session.
     pub(crate) workspace_command_runner: Option<WorkspaceCommandRunner>,
     pub(crate) initial_user_message: Option<UserMessage>,
+    pub(crate) initial_queued_user_messages: Vec<UserMessage>,
     pub(crate) enhanced_keys_supported: bool,
     pub(crate) has_chatgpt_account: bool,
     pub(crate) model_catalog: Arc<ModelCatalog>,
