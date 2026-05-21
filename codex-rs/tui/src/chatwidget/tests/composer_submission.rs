@@ -170,6 +170,69 @@ async fn typed_delimiter_submits_first_segment_and_queues_rest() {
 }
 
 #[tokio::test]
+async fn delimiter_only_submission_is_no_op() {
+    let (mut chat, _rx, mut op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    chat.thread_id = Some(ThreadId::new());
+
+    chat.bottom_pane
+        .set_composer_text("<submit_or_queue>".to_string(), Vec::new(), Vec::new());
+    chat.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+
+    assert!(chat.queued_user_message_texts().is_empty());
+    assert!(op_rx.try_recv().is_err());
+}
+
+#[tokio::test]
+async fn delimiter_ignores_leading_and_trailing_empty_segments() {
+    let (mut chat, _rx, mut op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    chat.thread_id = Some(ThreadId::new());
+
+    chat.bottom_pane.set_composer_text(
+        "<submit_or_queue>first task<submit_or_queue>second task<submit_or_queue>".to_string(),
+        Vec::new(),
+        Vec::new(),
+    );
+    chat.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+
+    let items = match next_submit_op(&mut op_rx) {
+        Op::UserTurn { items, .. } => items,
+        other => panic!("expected Op::UserTurn, got {other:?}"),
+    };
+    assert_eq!(
+        items,
+        vec![UserInput::Text {
+            text: "first task".to_string(),
+            text_elements: Vec::new(),
+        }]
+    );
+    assert_eq!(chat.queued_user_message_texts(), vec!["second task"]);
+}
+
+#[tokio::test]
+async fn delimiter_submission_appends_segments_after_existing_queue() {
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    chat.thread_id = Some(ThreadId::new());
+    chat.bottom_pane.set_task_running(/*running*/ true);
+
+    chat.queue_user_message(UserMessage::from("already queued"));
+    chat.bottom_pane.set_composer_text(
+        "first new task<submit_or_queue>second new task".to_string(),
+        Vec::new(),
+        Vec::new(),
+    );
+    chat.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+
+    assert_eq!(
+        chat.queued_user_message_texts(),
+        vec![
+            "already queued".to_string(),
+            "first new task".to_string(),
+            "second new task".to_string(),
+        ]
+    );
+}
+
+#[tokio::test]
 async fn submission_preserves_text_elements_and_local_images() {
     let (mut chat, mut rx, mut op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
 

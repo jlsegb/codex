@@ -117,7 +117,8 @@ See `codex-rs/tui/styles.md`.
 - Only split plain text `UserMessage`s. Do not split messages that include images, remote images, `text_elements`, or `mention_bindings` unless focused tests explicitly cover that behavior.
 - Preserve the normal non-delimiter submission path through `submit_user_message(...)`; delimiter handling should not bypass pending steer, review, shell command, or other existing submission behavior for ordinary prompts.
 - Queued user messages must snapshot `active_collaboration_mask` when they are enqueued and dispatch with that stored mask. Toggling Plan/Default mode later must not change already queued work.
-- Focused tests for this behavior live in `codex-rs/tui/src/chatwidget/tests/composer_submission.rs` and `codex-rs/tui/src/chatwidget/tests/plan_mode.rs`. Add or update coverage there when changing delimiter fan-out, paste behavior, startup prompts, or queued collaboration mode.
+- Focused regression tests for this behavior live in `codex-rs/tui/src/chatwidget/tests/composer_submission.rs` and `codex-rs/tui/src/chatwidget/tests/plan_mode.rs`. Do not update those tests to accept behavior drift unless the user's task explicitly asks to change this local behavior. If a future task appears to require changing these semantics but is not explicit, ask the user for clarification before changing the tests or implementation.
+- Add or update focused coverage in those files when intentionally changing delimiter fan-out, paste behavior, startup prompts, or queued collaboration mode.
 
 ### Local TUI blue background marker
 
